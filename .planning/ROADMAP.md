@@ -42,7 +42,12 @@
   4. Vite `npm run build` produces a static `/dist/` folder with relative asset paths that runs when opened from any subdirectory.
   5. `three` is pinned to an exact version in `package.json` (no caret), and the asset optimization pipeline (`gltf-transform optimize` with meshopt + KTX2) is wired up and documented in the repo, even though only placeholder geometry exists.
 
-**Plans**: TBD
+**Plans**: 5 plans
+- [ ] 01-A-scaffold.md — Vite project scaffold, exact-pinned three, gltf-transform wiring, module skeleton, index.html with touch-action:none canvas
+- [ ] 01-B-engine.md — WebGLRenderer (SRGBColorSpace, DPR cap), scene + lights, fixed-step loop with delta cap, flat ground, placeholder capsule
+- [ ] 01-C-input.md — Keyboard (Arrow+WASD), touch (Pointer Events swipe), input aggregator emitting semantic actions
+- [ ] 01-D-player-feel.md — Player FSM: lane switch (~150ms), jump arc (~800ms), slide (~600ms), camera follow
+- [ ] 01-E-smoke-test.md — Desktop + real-device Android smoke test (CRITICAL GATE), Key Decision log update
 **UI hint**: yes
 
 ---
