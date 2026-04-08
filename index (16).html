@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SayNine Xtreme</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#0a0a0f;
+  display:flex;justify-content:center;align-items:center;
+  min-height:100vh;overflow:hidden;
+}
+canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+
+/* ================================================================
+   SAYNINE XTREME — Single-file 2.5D Endless Runner
+   ★ Customise colours, speeds & sizes in the CONFIG block below.
+   ★ Drop ./character.png and ./coin_character.png next to this file.
+   ================================================================ */
+
+// ── CONFIG ── tweak anything here ───────────────────────────────
+const CFG = {
+  // Canvas resolution
+  W:800, H:500,
+
+  // ── Palette ──
+  BG:       '#0a0a0f',   // deep background
+  TRACK:    '#0d0d1a',   // track surface
+  ACCENT:   '#4f6ef7',   // electric blue
+  ACCENT2:  '#8b5cf6',   // purple
+  GRID:     'rgba(79,110,247,0.18)',  // scrolling grid lines
+  LDIV:     'rgba(79,110,247,0.55)', // lane dividers (solid, glowing)
+  OBODY:    '#13132a',   // obstacle fill
+  OGLOW:    '#ff2e2e',   // obstacle red glow
+  CCOL:     '#4f6ef7',   // fallback coin colour
+  TEXT:     '#ffffff',
+
+  // ── Perspective ──
+  VX:400, VY:200,  // single vanishing point — ALL lines converge here
+  NY:458,          // near-edge y (ground at camera)
+
+  // Track x-bounds at near edge (wide = road feels big)
+  TL:65,  TR:735,
+
+  // Lane centre x at near edge (3 lanes, ~223px each)
+  // Derived: TL + (TR-TL)/6 = 182, centre = 400, TR - (TR-TL)/6 = 618
+  LANES:[182, 400, 618],
+
+  // ── Player ──
+  PW:72, PH:112,  // bigger sprite — more visible on wide track
+  PSH:46,         // sprite h sliding
+  BOBA:5,         // bob amplitude px
+  BOBS:0.13,      // bob speed rad/frame
+
+  // ── Physics ──
+  JV:17,    // jump launch velocity
+  GV:0.85,  // gravity per frame
+
+  // ── Lane switch ──
+  SWF:10,   // frames for switch
+
+  // ── Speed (depth-units / frame) ──
+  SPD0:0.009, SPDX:0.028, SPDI:0.0000065,
+
+  // ── Obstacles ──
+  OW:115,        // obstacle width at scale 1 (fills ~50% of lane width)
+  BH:95,         // block height (switch lane)
+  HH:38,         // hurdle height (jump over)
+  OS0:135,       // initial spawn interval frames
+  OSX:62,        // min spawn interval
+  OSD:0.04,      // interval decrease/frame
+
+  // ── Collectibles ──
+  CR:22,    // coin radius at scale 1
+  CFH:60,   // coin float height above ground
+  CS0:90, CSX:45, CSD:0.02,
+
+  // ── Parallax ──
+  PAR:28,
+};
+// ── END CONFIG ─────────────────────────────────────────────────
+
+
+// ── Canvas ───────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+canvas.width = CFG.W; canvas.height = CFG.H;
+
+// Responsive scaling
+function resize(){
+  const s = Math.min(window.innerWidth/CFG.W, window.innerHeight/CFG.H);
+  canvas.style.width  = (CFG.W*s)+'px';
+  canvas.style.height = (CFG.H*s)+'px';
+}
+window.addEventListener('resize', resize); resize();
+
+// ── Assets ───────────────────────────────────────────────────────
+const playerImg = new Image(); playerImg.src = './character.png';
+const coinImg   = new Image(); coinImg.src   = './coin_character.png';
+
+// ── Utilities ────────────────────────────────────────────────────
+const lerp   = (a,b,t) => a+(b-a)*t;
+const clamp  = (v,lo,hi) => Math.max(lo,Math.min(hi,v));
+const rng    = (a,b) => a+Math.random()*(b-a);
+const ri     = (a,b) => (a+Math.random()*(b-a+1))|0;
+
+// Perspective helpers
+// All objects converge to the single vanishing point (VX,VY) at depth t=0.
+const pX = (li,t) => lerp(CFG.VX, CFG.LANES[li], t);
+const pY = t      => lerp(CFG.VY, CFG.NY, t);          // screen y at depth t
+const pS = t      => lerp(0.07, 1.0, t);               // scale at depth t
+const eio= t      => t<.5 ? 2*t*t : -1+(4-2*t)*t;      // ease-in-out
+
+// Polyfill for roundRect (older browsers)
+function rrect(ctx,x,y,w,h,r){
+  if(ctx.roundRect){ctx.roundRect(x,y,w,h,r);return;}
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+
+// ── Game state ───────────────────────────────────────────────────
+let state    = 'start';
+let score    = 0;
+let hiScore  = 0;
+let gSpeed   = CFG.SPD0;
+let tick     = 0;
+let scrollZ  = 0;
+let trackZ   = 0;  // grid scrolls faster than gameplay objects (rush effect)
+
+
+// ── Player object ────────────────────────────────────────────────
+const P = {
+  lane:1, prevLane:1,
+  swT:1,               // lane-switch progress [0→1]
+  x:CFG.LANES[1],      // interpolated screen x
+  onGnd:true,
+  jv:0, jy:0,          // jump velocity & height above ground
+  sliding:false, slideT:0,
+  h:CFG.PH,            // current height (changes when sliding)
+  bobA:0,
+  reset(){
+    Object.assign(this,{
+      lane:1,prevLane:1,swT:1,x:CFG.LANES[1],
+      onGnd:true,jv:0,jy:0,
+      sliding:false,slideT:0,h:CFG.PH,bobA:0
+    });
+  }
+};
+
+// ── Obstacle & collectible arrays ────────────────────────────────
+let obs      = [];   // { lane, prog[0..1], type:'block'|'hurdle' }
+let coins    = [];   // { lane, prog, bobA, pulA }
+let cAnims   = [];   // collection animations { x,y,s,a }
+let obsT     = 0;
+let coinT    = 0;
+
+// ── Input ────────────────────────────────────────────────────────
+const K = {};
+document.addEventListener('keydown', e=>{
+  if(K[e.code]) return; K[e.code]=true; handleKey(e.code);
+  if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))
+    e.preventDefault();
+});
+document.addEventListener('keyup', e=>{ K[e.code]=false; });
+
+// Touch swipe
+let tx=0, ty=0;
+canvas.addEventListener('touchstart', e=>{
+  tx=e.touches[0].clientX; ty=e.touches[0].clientY; e.preventDefault();
+},{passive:false});
+canvas.addEventListener('touchend', e=>{
+  const dx=e.changedTouches[0].clientX-tx, dy=e.changedTouches[0].clientY-ty;
+  if(state!=='playing'){ startGame(); return; }
+  if(Math.abs(dx)>Math.abs(dy)){ dx<-30?swLane(-1):dx>30&&swLane(1); }
+  else { dy<-30?doJump():dy>30&&doSlide(); }
+  e.preventDefault();
+},{passive:false});
+
+// Restart button click on game-over screen
+canvas.addEventListener('click', e=>{
+  if(state==='start'){ startGame(); return; }
+  if(state!=='gameover') return;
+  const rect=canvas.getBoundingClientRect();
+  const mx=(e.clientX-rect.left)*(CFG.W/rect.width);
+  const my=(e.clientY-rect.top) *(CFG.H/rect.height);
+  const bx=CFG.W/2-110, by=CFG.H/2+58;
+  if(mx>=bx&&mx<=bx+220&&my>=by&&my<=by+52) startGame();
+});
+
+function handleKey(code){
+  if(state==='start'||state==='gameover'){
+    if(code==='Space'||code==='Enter') startGame(); return;
+  }
+  if(state!=='playing') return;
+  if(code==='ArrowLeft' ||code==='KeyA') swLane(-1);
+  if(code==='ArrowRight'||code==='KeyD') swLane(1);
+  if(code==='Space'||code==='ArrowUp')   doJump();
+  if(code==='ArrowDown' ||code==='KeyS') doSlide();
+}
+function swLane(d){
+  const nl=clamp(P.lane+d,0,2);
+  if(nl!==P.lane){P.prevLane=P.lane;P.lane=nl;P.swT=0;}
+}
+function doJump(){ if(P.onGnd&&!P.sliding){P.onGnd=false;P.jv=CFG.JV;} }
+function doSlide(){ if(P.onGnd&&!P.sliding){P.sliding=true;P.slideT=50;P.h=CFG.PSH;} }
+
+
+// ── Game flow ────────────────────────────────────────────────────
+function startGame(){
+  state='playing'; score=0; gSpeed=CFG.SPD0; tick=0; scrollZ=0; trackZ=0;
+  obs=[]; coins=[]; cAnims=[]; obsT=0; coinT=0;
+  P.reset();
+}
+function endGame(){
+  if(score>hiScore) hiScore=score;
+  state='gameover';
+}
+
+// ── Spawn helpers ────────────────────────────────────────────────
+function spawnObs(){
+  // 8% chance after frame 350: all-lane hurdle → player MUST jump
+  if(Math.random()<0.08 && tick>350){
+    [0,1,2].forEach(l=>obs.push({lane:l,prog:0,type:'hurdle'}));
+    return;
+  }
+  // Single-lane only early on; double-lane patterns after frame 420
+  const pool = tick<420
+    ? [[0],[1],[2]]
+    : [[0],[1],[2],[0,1],[1,2],[0,2]];
+  pool[ri(0,pool.length-1)].forEach(l=>
+    obs.push({lane:l,prog:0,type:'block'})
+  );
+}
+function spawnCoin(){
+  coins.push({lane:ri(0,2),prog:0,bobA:rng(0,Math.PI*2),pulA:rng(0,Math.PI*2)});
+}
+
+// ── UPDATE ───────────────────────────────────────────────────────
+function update(){
+  // Keep the grid animated even on the start screen
+  if(state==='start'){
+    P.bobA+=CFG.BOBS;
+    trackZ += CFG.SPD0 * 3.2;
+    return;
+  }
+  if(state!=='playing') return;
+
+  // ── Core tick ──
+  tick++;
+  gSpeed = Math.min(CFG.SPDX, CFG.SPD0 + tick*CFG.SPDI);
+  scrollZ += gSpeed;
+  trackZ  += gSpeed * 3.2;  // grid rushes 3.2× faster than game objects
+  score = Math.floor(tick/5);
+
+  // Lane switch interpolation (ease-in-out)
+  if(P.swT<1) P.swT=Math.min(1, P.swT+1/CFG.SWF);
+  P.x = lerp(CFG.LANES[P.prevLane], CFG.LANES[P.lane], eio(P.swT));
+
+  // Jump physics
+  if(!P.onGnd){
+    P.jv -= CFG.GV; P.jy += P.jv;
+    if(P.jy<=0){ P.jy=0; P.onGnd=true; P.jv=0; }
+  }
+
+  // Slide timer
+  if(P.sliding){ if(--P.slideT<=0){ P.sliding=false; P.h=CFG.PH; } }
+
+  // Bob (only while running on ground)
+  if(P.onGnd&&!P.sliding) P.bobA+=CFG.BOBS;
+
+  // ── Obstacle spawn & update ──
+  obsT++;
+  const obsRate = Math.max(CFG.OSX, CFG.OS0 - tick*CFG.OSD);
+  if(obsT>=obsRate){ obsT=0; spawnObs(); }
+
+  for(let i=obs.length-1;i>=0;i--){
+    const o=obs[i];
+    o.prog += gSpeed;
+    if(o.prog>1.1){ obs.splice(i,1); continue; }
+    // Collision window
+    if(o.prog>=0.91 && o.prog<=1.04){
+      const ox=pX(o.lane,o.prog), os=pS(o.prog);
+      const ow=CFG.OW*os;
+      const oh=(o.type==='hurdle'?CFG.HH:CFG.BH)*os;
+      // Forgiving horizontal hitbox (45% of each half-width)
+      if(Math.abs(P.x-ox) < (CFG.PW*0.45+ow*0.45)){
+        // Did player jump clear? Need jumpY >= 75% of obstacle height
+        if(P.jy < oh*0.75){ endGame(); return; }
+      }
+    }
+  }
+
+  // ── Coin spawn & update ──
+  coinT++;
+  const coinRate = Math.max(CFG.CSX, CFG.CS0 - tick*CFG.CSD);
+  if(coinT>=coinRate){ coinT=0; spawnCoin(); }
+
+  for(let i=coins.length-1;i>=0;i--){
+    const cn=coins[i];
+    cn.prog+=gSpeed; cn.bobA+=0.06; cn.pulA+=0.09;
+    if(cn.prog>1.1){ coins.splice(i,1); continue; }
+    if(cn.prog>=0.89&&cn.prog<=1.04){
+      const cx=pX(cn.lane,cn.prog);
+      if(Math.abs(P.x-cx)<CFG.PW*0.9){
+        score+=10;
+        const cs=pS(cn.prog);
+        cAnims.push({x:cx, y:pY(cn.prog)-CFG.CFH*cs, s:1, a:1});
+        coins.splice(i,1);
+      }
+    }
+  }
+
+  // Collection animations
+  for(let i=cAnims.length-1;i>=0;i--){
+    const a=cAnims[i];
+    a.s+=0.1; a.a-=0.065; a.y-=1.8;
+    if(a.a<=0) cAnims.splice(i,1);
+  }
+}
+
+
+// ── DRAW FUNCTIONS ───────────────────────────────────────────────
+
+function drawBg(){
+  // Clean dark background
+  ctx.fillStyle = CFG.BG;
+  ctx.fillRect(0,0,CFG.W,CFG.H);
+
+  // Subtle glow at the vanishing point (horizon depth cue)
+  const hg=ctx.createRadialGradient(CFG.VX,CFG.VY,0,CFG.VX,CFG.VY,220);
+  hg.addColorStop(0,'rgba(79,110,247,0.13)');
+  hg.addColorStop(1,'rgba(79,110,247,0)');
+  ctx.fillStyle=hg;
+  ctx.fillRect(CFG.VX-220,CFG.VY-80,440,220);
+}
+
+function drawTrack(){
+  const {VX,VY,NY,TL,TR,ACCENT}=CFG;
+
+  // Near-edge lane boundaries (3 equal lanes between TL and TR)
+  const lW = (TR-TL)/3;
+  const nB = [TL, TL+lW, TL+lW*2, TR]; // 4 x-positions at near edge
+
+  // ── Track surface: three triangular lane fills ────────────────────
+  // Each lane is a triangle converging to the vanishing point.
+  // Centre lane is slightly lighter to give visual separation.
+  const laneColors=['#0c0c1d','#10102a','#0c0c1d'];
+  for(let i=0;i<3;i++){
+    ctx.fillStyle=laneColors[i];
+    ctx.beginPath();
+    ctx.moveTo(nB[i], NY);
+    ctx.lineTo(nB[i+1], NY);
+    ctx.lineTo(VX, VY);   // all converge to the vanishing point
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // ── Horizontal grid lines with WORLD-SPACE perspective spacing ────
+  // Lines are spaced equally in 3D world units → they bunch near the
+  // horizon and spread apart near the camera, giving true depth illusion.
+  // trackZ scrolls 3× faster than game objects for the "rush" effect.
+  const nearZ = 1.5, farZ = 55, worldStep = 2.8;
+  const scrollW = trackZ * 18;
+  const kStart  = Math.ceil(scrollW / worldStep);
+
+  for(let k = kStart; k <= kStart+20; k++){
+    const wz = nearZ + k*worldStep - scrollW;
+    if(wz<=0 || wz>farZ) continue;
+    const t  = nearZ/wz;           // t=1 near camera, t→0 at horizon
+    const y  = lerp(VY, NY, t);
+    const lx = lerp(VX, TL, t);   // converges to vanishing point
+    const rx = lerp(VX, TR, t);
+    const alpha = 0.06 + 0.38*t*t;  // brighter near camera
+    const lw    = 0.5  + 1.8*t;     // thicker near camera
+    ctx.strokeStyle=`rgba(79,110,247,${alpha.toFixed(3)})`;
+    ctx.lineWidth=lw;
+    ctx.beginPath(); ctx.moveTo(lx,y); ctx.lineTo(rx,y); ctx.stroke();
+  }
+
+  // ── 2 inner lane dividers: bright solid lines from VX to near edge ─
+  ctx.save();
+  ctx.shadowColor=ACCENT; ctx.shadowBlur=10;
+  ctx.strokeStyle=CFG.LDIV; ctx.lineWidth=2;
+  [nB[1], nB[2]].forEach(nx=>{
+    ctx.beginPath(); ctx.moveTo(VX,VY); ctx.lineTo(nx,NY); ctx.stroke();
+  });
+  ctx.restore();
+
+  // ── Outer track edges (stronger glow) ────────────────────────────
+  ctx.save();
+  ctx.shadowColor=ACCENT; ctx.shadowBlur=16;
+  ctx.strokeStyle='rgba(79,110,247,0.70)'; ctx.lineWidth=2.5;
+  [[VX,VY,TL,NY],[VX,VY,TR,NY]].forEach(([x1,y1,x2,y2])=>{
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  ctx.restore();
+
+  // ── Floor strip below near edge ───────────────────────────────────
+  ctx.fillStyle='#06060f';
+  ctx.fillRect(0,NY,CFG.W,CFG.H-NY);
+
+  // Glowing line at the near edge (where track meets ground)
+  ctx.save();
+  ctx.shadowColor=ACCENT; ctx.shadowBlur=14;
+  ctx.strokeStyle='rgba(79,110,247,0.55)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(TL,NY); ctx.lineTo(TR,NY); ctx.stroke();
+  ctx.restore();
+}
+
+
+function drawObstacles(){
+  // Draw back-to-front so closer obstacles appear on top
+  obs.slice().sort((a,b)=>a.prog-b.prog).forEach(o=>{
+    if(o.prog<=0.02||o.prog>1.05) return;
+    const t=o.prog, s=pS(t);
+    const ox=pX(o.lane,t), oy=pY(t);
+    const w=CFG.OW*s;
+    const h=(o.type==='hurdle'?CFG.HH:CFG.BH)*s;
+
+    ctx.save();
+    // Red glow shadow
+    ctx.shadowColor=CFG.OGLOW; ctx.shadowBlur=28*s;
+    // Dark body
+    ctx.fillStyle=CFG.OBODY;
+    ctx.fillRect(ox-w/2, oy-h, w, h);
+    ctx.shadowBlur=0;
+    // Red glow border
+    ctx.strokeStyle=`rgba(255,46,46,${0.45+0.55*s})`;
+    ctx.lineWidth=1.5*s;
+    ctx.strokeRect(ox-w/2, oy-h, w, h);
+    // Top-face highlight
+    ctx.fillStyle=`rgba(255,46,46,${0.09*s})`;
+    ctx.fillRect(ox-w/2, oy-h, w, h*0.28);
+    // Horizontal stripe detail
+    ctx.fillStyle=`rgba(255,46,46,${0.06*s})`;
+    ctx.fillRect(ox-w/2+2*s, oy-h*0.55, w-4*s, h*0.15);
+    ctx.restore();
+  });
+}
+
+function drawCoins(){
+  coins.forEach(cn=>{
+    if(cn.prog<=0.02||cn.prog>1.05) return;
+    const t=cn.prog, s=pS(t);
+    const cx=pX(cn.lane,t);
+    const bob=Math.sin(cn.bobA)*10*s;
+    const cy=pY(t)-CFG.CFH*s+bob;
+    const pul=1+Math.sin(cn.pulA)*0.18;
+    const r=CFG.CR*s*pul;
+
+    ctx.save();
+    if(coinImg.complete&&coinImg.naturalWidth>0){
+      ctx.globalAlpha=0.88+Math.sin(cn.pulA)*0.12;
+      const sz=r*2.8;
+      ctx.drawImage(coinImg, cx-sz/2, cy-sz/2, sz, sz);
+    } else {
+      // Fallback: glowing blue circle
+      ctx.shadowColor=CFG.ACCENT; ctx.shadowBlur=18*s;
+      ctx.fillStyle=CFG.CCOL; ctx.globalAlpha=0.9;
+      ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+      // Shine
+      ctx.fillStyle='rgba(255,255,255,0.3)';
+      ctx.beginPath(); ctx.arc(cx-r*.25,cy-r*.28,r*.42,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  });
+
+  // +10 pop-up animations
+  cAnims.forEach(an=>{
+    // Scaled coin sprite/fallback
+    ctx.save();
+    ctx.globalAlpha=an.a;
+    ctx.translate(an.x,an.y); ctx.scale(an.s,an.s);
+    if(coinImg.complete&&coinImg.naturalWidth>0){
+      ctx.drawImage(coinImg,-20,-20,40,40);
+    } else {
+      ctx.fillStyle=CFG.ACCENT; ctx.shadowColor=CFG.ACCENT; ctx.shadowBlur=18;
+      ctx.beginPath(); ctx.arc(0,0,18,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+    // "+10" text in screen space (no scale)
+    ctx.save();
+    ctx.globalAlpha=an.a;
+    ctx.fillStyle='#fff'; ctx.shadowColor=CFG.ACCENT; ctx.shadowBlur=6;
+    ctx.font='bold 15px "Syne",sans-serif'; ctx.textAlign='center';
+    ctx.fillText('+10', an.x, an.y-28);
+    ctx.restore();
+  });
+}
+
+function drawPlayer(){
+  const bob = P.onGnd&&!P.sliding ? Math.sin(P.bobA)*CFG.BOBA : 0;
+  const px=P.x, pw=CFG.PW, ph=P.h;
+  const py=CFG.NY - ph - P.jy + bob;
+
+  ctx.save();
+  if(playerImg.complete&&playerImg.naturalWidth>0){
+    ctx.drawImage(playerImg, px-pw/2, py, pw, ph);
+  } else {
+    // Fallback: glowing blue rectangle with eyes
+    ctx.shadowColor=CFG.ACCENT; ctx.shadowBlur=24;
+    ctx.fillStyle=CFG.ACCENT;
+    ctx.fillRect(px-pw/2, py, pw, ph);
+    ctx.shadowBlur=0;
+    // Eyes
+    ctx.fillStyle='#fff';
+    ctx.fillRect(px-pw/2+8,  py+14, 11,11);
+    ctx.fillRect(px+pw/2-19, py+14, 11,11);
+    ctx.fillStyle=CFG.BG;
+    ctx.fillRect(px-pw/2+11, py+17, 5,6);
+    ctx.fillRect(px+pw/2-16, py+17, 5,6);
+  }
+  ctx.restore();
+}
+
+
+function drawHUD(){
+  // ── Logo top-left ──
+  ctx.save();
+  ctx.shadowColor=CFG.ACCENT; ctx.shadowBlur=12;
+  ctx.fillStyle=CFG.ACCENT;
+  ctx.font='bold 22px "Syne",sans-serif';
+  ctx.fillText('SayNine Xtreme',18,38);
+  ctx.restore();
+
+  // ── Score top-right ──
+  ctx.textAlign='right';
+  ctx.fillStyle=CFG.TEXT;
+  ctx.font='bold 26px "Syne",sans-serif';
+  ctx.fillText(score, CFG.W-18, 36);
+  ctx.fillStyle='rgba(255,255,255,0.42)';
+  ctx.font='13px "Syne",sans-serif';
+  ctx.fillText('BEST  '+hiScore, CFG.W-18, 54);
+  ctx.textAlign='left';
+}
+
+function drawStartScreen(){
+  // Dark overlay
+  ctx.fillStyle='rgba(10,10,15,0.82)';
+  ctx.fillRect(0,0,CFG.W,CFG.H);
+  ctx.textAlign='center';
+
+  // "SayNine" in white with blue glow
+  ctx.save();
+  ctx.shadowColor=CFG.ACCENT; ctx.shadowBlur=45;
+  ctx.fillStyle=CFG.TEXT;
+  ctx.font='bold 70px "Syne",sans-serif';
+  ctx.fillText('SayNine', CFG.W/2, CFG.H/2-48);
+  // "Xtreme" in accent colour
+  ctx.shadowColor=CFG.ACCENT2;
+  ctx.fillStyle=CFG.ACCENT;
+  ctx.fillText('Xtreme', CFG.W/2, CFG.H/2+32);
+  ctx.restore();
+
+  // Tagline
+  ctx.fillStyle='rgba(255,255,255,0.45)';
+  ctx.font='15px "Syne",sans-serif';
+  ctx.fillText('Endless Runner', CFG.W/2, CFG.H/2+65);
+
+  // Pulsing "Press SPACE" prompt
+  const pulse=0.6+0.4*Math.sin(Date.now()*0.004);
+  ctx.save(); ctx.globalAlpha=pulse;
+  ctx.shadowColor='#fff'; ctx.shadowBlur=8;
+  ctx.fillStyle=CFG.TEXT;
+  ctx.font='bold 20px "Syne",sans-serif';
+  ctx.fillText('Press SPACE to Start', CFG.W/2, CFG.H/2+104);
+  ctx.restore();
+
+  // Controls hint
+  ctx.fillStyle='rgba(255,255,255,0.28)';
+  ctx.font='12px "Syne",sans-serif';
+  ctx.fillText(
+    '← → / A D : Switch Lane   •   SPACE / ↑ : Jump   •   ↓ / S : Slide',
+    CFG.W/2, CFG.H/2+134
+  );
+  ctx.textAlign='left';
+}
+
+function drawGameOver(){
+  ctx.fillStyle='rgba(10,10,15,0.90)';
+  ctx.fillRect(0,0,CFG.W,CFG.H);
+  ctx.textAlign='center';
+
+  // GAME OVER with red glow
+  ctx.save();
+  ctx.shadowColor=CFG.OGLOW; ctx.shadowBlur=40;
+  ctx.fillStyle=CFG.TEXT;
+  ctx.font='bold 62px "Syne",sans-serif';
+  ctx.fillText('GAME OVER', CFG.W/2, CFG.H/2-72);
+  ctx.restore();
+
+  // Score
+  ctx.fillStyle=CFG.ACCENT;
+  ctx.font='bold 36px "Syne",sans-serif';
+  ctx.fillText('Score  '+score, CFG.W/2, CFG.H/2-10);
+
+  // High score / new record
+  if(score>0&&score>=hiScore){
+    ctx.save();
+    ctx.shadowColor='#ffd700'; ctx.shadowBlur=18;
+    ctx.fillStyle='#ffd700';
+    ctx.font='bold 17px "Syne",sans-serif';
+    ctx.fillText('★  New High Score!  ★', CFG.W/2, CFG.H/2+28);
+    ctx.restore();
+  } else {
+    ctx.fillStyle='rgba(255,255,255,0.42)';
+    ctx.font='17px "Syne",sans-serif';
+    ctx.fillText('Best  '+hiScore, CFG.W/2, CFG.H/2+28);
+  }
+
+  // Restart button (gradient blue→purple, rounded)
+  const bx=CFG.W/2-110, by=CFG.H/2+58, bw=220, bh=52;
+  ctx.save();
+  ctx.shadowColor=CFG.ACCENT; ctx.shadowBlur=22;
+  const bg=ctx.createLinearGradient(bx,by,bx+bw,by+bh);
+  bg.addColorStop(0,CFG.ACCENT); bg.addColorStop(1,CFG.ACCENT2);
+  ctx.fillStyle=bg;
+  ctx.beginPath(); rrect(ctx,bx,by,bw,bh,10); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle='#fff';
+  ctx.font='bold 21px "Syne",sans-serif';
+  ctx.fillText('RESTART', CFG.W/2, by+35);
+
+  ctx.fillStyle='rgba(255,255,255,0.36)';
+  ctx.font='12px "Syne",sans-serif';
+  ctx.fillText('Press SPACE  or  click to restart', CFG.W/2, by+70);
+  ctx.textAlign='left';
+}
+
+
+// ── MAIN LOOP ────────────────────────────────────────────────────
+function loop(){
+  update();
+
+  // Background and track always rendered (animated on all screens)
+  drawBg();
+  drawTrack();
+
+  if(state==='playing'){
+    drawObstacles();
+    drawCoins();
+    drawPlayer();
+    drawHUD();
+  } else if(state==='gameover'){
+    // World frozen, overlay on top
+    drawObstacles();
+    drawCoins();
+    drawPlayer();
+    drawHUD();
+    drawGameOver();
+  } else {
+    // Start screen: idle player visible behind overlay
+    drawPlayer();
+    drawStartScreen();
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// Kick it off!
+loop();
+
+</script>
+</body>
+</html>
