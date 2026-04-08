@@ -257,21 +257,118 @@ The 23 anti-features from FEATURES.md, codified here to prevent scope creep. **D
 | TypeScript | Vanilla JS per STACK.md — skill-set + timeline. |
 
 ---
-
 ## Traceability
 
-Populated during roadmap creation. All v1 requirements must map to exactly one phase before roadmap is approved.
+All 89 v1 requirements mapped to exactly one phase. See `.planning/ROADMAP.md` for phase details.
 
 | Requirement | Phase | Status |
 |---|---|---|
-| *(all)* | *TBD* | Pending |
+| LOOP-01 | Phase 2 | Pending |
+| LOOP-02 | Phase 1 | Pending |
+| LOOP-03 | Phase 1 | Pending |
+| LOOP-04 | Phase 1 | Pending |
+| LOOP-05 | Phase 3 | Pending |
+| LOOP-06 | Phase 2 | Pending |
+| WORLD-01 | Phase 2 | Pending |
+| WORLD-02 | Phase 2 | Pending |
+| WORLD-03 | Phase 2 | Pending |
+| WORLD-04 | Phase 3 | Pending |
+| OBS-01 | Phase 2 | Pending |
+| OBS-02 | Phase 2 | Pending |
+| OBS-03 | Phase 2 | Pending |
+| OBS-04 | Phase 2 | Pending |
+| OBS-05 | Phase 2 | Pending |
+| OBS-06 | Phase 2 | Pending |
+| COIN-01 | Phase 2 | Pending |
+| COIN-02 | Phase 3 | Pending |
+| COIN-03 | Phase 2 | Pending |
+| COIN-04 | Phase 2 | Pending |
+| PLAYER-01 | Phase 2 | Pending |
+| PLAYER-02 | Phase 2 | Pending |
+| PLAYER-03 | Phase 1 | Pending |
+| PLAYER-04 | Phase 2 | Pending |
+| PWR-01 | Phase 3 | Pending |
+| PWR-02 | Phase 3 | Pending |
+| PWR-03 | Phase 3 | Pending |
+| INPUT-01 | Phase 1 | Pending |
+| INPUT-02 | Phase 1 | Pending |
+| INPUT-03 | Phase 1 | Pending |
+| INPUT-04 | Phase 1 | Pending |
+| INPUT-05 | Phase 3 | Pending |
+| HUD-01 | Phase 3 | Pending |
+| HUD-02 | Phase 3 | Pending |
+| HUD-03 | Phase 3 | Pending |
+| HUD-04 | Phase 3 | Pending |
+| HUD-05 | Phase 3 | Pending |
+| HUD-06 | Phase 3 | Pending |
+| STATE-01 | Phase 2 | Pending |
+| STATE-02 | Phase 2 | Pending |
+| STATE-03 | Phase 2 | Pending |
+| GO-01 | Phase 4 | Pending |
+| GO-02 | Phase 4 | Pending |
+| GO-03 | Phase 4 | Pending |
+| GO-04 | Phase 4 | Pending |
+| GO-05 | Phase 4 | Pending |
+| GO-06 | Phase 4 | Pending |
+| GO-07 | Phase 4 | Pending |
+| GO-08 | Phase 4 | Pending |
+| GO-09 | Phase 4 | Pending |
+| LB-01 | Phase 4 | Pending |
+| LB-02 | Phase 4 | Pending |
+| LB-03 | Phase 4 | Pending |
+| SHARE-01 | Phase 4 | Pending |
+| SHARE-02 | Phase 4 | Pending |
+| SHARE-03 | Phase 4 | Pending |
+| SHARE-04 | Phase 4 | Pending |
+| EMAIL-01 | Phase 4 | Pending |
+| EMAIL-02 | Phase 4 | Pending |
+| EMAIL-03 | Phase 4 | Pending |
+| EMAIL-04 | Phase 4 | Pending |
+| AUDIO-01 | Phase 3 | Pending |
+| AUDIO-02 | Phase 3 | Pending |
+| AUDIO-03 | Phase 3 | Pending |
+| AUDIO-04 | Phase 3 | Pending |
+| VIS-01 | Phase 3 | Pending |
+| VIS-02 | Phase 3 | Pending |
+| VIS-03 | Phase 3 | Pending |
+| VIS-04 | Phase 3 | Pending |
+| VIS-05 | Phase 3 | Pending |
+| VIS-06 | Phase 3 | Pending |
+| PERF-01 | Phase 1 (cross-cutting — gated in all phases) | Pending |
+| PERF-02 | Phase 5 | Pending |
+| PERF-03 | Phase 5 | Pending |
+| PERF-04 | Phase 5 | Pending |
+| PERF-05 | Phase 1 | Pending |
+| PERF-06 | Phase 1 | Pending |
+| PERF-07 | Phase 1 | Pending |
+| PERF-08 | Phase 1 | Pending |
+| PERF-09 | Phase 1 (cross-cutting — gated in all phases) | Pending |
+| ASSET-01 | Phase 2 | Done (212 KB, pre-roadmap) |
+| ASSET-02 | Phase 2 | Pending (Mixamo merge) |
+| ASSET-03 | Phase 1 | Pending |
+| ASSET-04 | Phase 1 | Pending |
+| ASSET-05 | Phase 1 | Pending |
+| DEPLOY-01 | Phase 1 | Pending (baked in as constraint) |
+| DEPLOY-02 | Phase 1 | Pending (baked in as constraint) |
+| DEPLOY-03 | Phase 5 | Pending |
+| DEPLOY-04 | Phase 5 | Pending |
+| DEPLOY-05 | Phase 5 | Pending |
+| DEPLOY-06 | Phase 5 | Pending |
+| A11Y-01 | Phase 2 | Pending |
+| A11Y-02 | Phase 3 | Pending |
+| A11Y-03 | Phase 3 | Pending |
+| A11Y-04 | Phase 3 | Pending |
 
-**Coverage (pre-roadmap):**
+**Coverage (post-roadmap):**
 - v1 requirements total: **89**
-- Mapped to phases: 0
-- Unmapped: 89 ⚠️ (will be resolved in ROADMAP.md step)
+- Mapped to phases: **89**
+- Unmapped: **0** ✓
+
+**Cross-cutting notes:**
+- **PERF-01** (60 fps on mid-range Android) and **PERF-09** (real-device mobile smoke test) are formally owned by Phase 1 for counting purposes, but gate **every** phase transition (1→2, 2→3, 3→4, 4→5, and final). They are baked into each phase's success criteria.
+- **DEPLOY-01/02** (static bundle + relative paths) are owned by Phase 1 as design constraints enforced from day 1, then re-verified in Phase 5 during the production build.
 
 ---
 
 *Requirements defined: 2026-04-08*
-*Last updated: 2026-04-08 after initial definition*
+*Last updated: 2026-04-08 — traceability populated from ROADMAP.md*
