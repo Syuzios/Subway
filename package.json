@@ -1,0 +1,30 @@
+{
+  "name": "saynine-xtreme",
+  "version": "0.1.0",
+  "description": "A Three.js endless runner for saynine.ai — Ninty runs, Linky coins.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "optimize-glb": "node tools/optimize-glb.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Syuzios/Subway.git"
+  },
+  "author": "SayNine",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/Syuzios/Subway/issues"
+  },
+  "homepage": "https://github.com/Syuzios/Subway#readme",
+  "dependencies": {
+    "three": "0.183.2"
+  },
+  "devDependencies": {
+    "@gltf-transform/cli": "^4.3.0",
+    "vite": "^8.0.7"
+  }
+}

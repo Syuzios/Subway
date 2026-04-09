@@ -1,5 +1,11 @@
 .claude/
 
+# Node
+node_modules/
+dist/
+*.log
+.DS_Store
+
 # Source 3D assets are huge (ninty.glb is 132 MB) — git-ignored, shared via Drive.
 # Optimized versions in assets/optimized/ are committed (small, web-ready).
 assets/*.glb
